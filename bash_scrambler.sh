@@ -1,9 +1,10 @@
 #!/bin/bash
 
 # Some variables
-alg_type="none"
-filename="none"
+file="none"
 option_code=""
+password=""
+
 declare -A colors=(
   [red]="\033[31m"
   [green]="\033[32m"
@@ -47,7 +48,7 @@ banner() {
 "
 }
 
-# Print menu and choose one of the option
+# Print menu and generate option code
 menu() {
     change_color "magenta"
     local temp_option=""
@@ -61,16 +62,52 @@ menu() {
     else
         option_code+="---"
     fi
+    while true; do
+        read -p "Enter filename or file path: " file
+        if [[ -f "$file" || -d "$file" ]]; then
+            break
+        else
+            printf "[!] File doesnt exist!\n"
+        fi
+    done
 }
 
 # Function checking whether the given data is a folder and packs it into an archive
-to_zip_convert() {}
+tar_untar() {
+    if [ "$1" == "1" ]; then
+        tar -C "$(dirname "decrypted.tar")" -xf "decrypted.tar"
+        rm "decrypted.tar"
+    else
+        tar -C "$(dirname "$file")" -cf "$file.tar" "$(basename "$file")"
+        file="$file.tar"
+    fi
+}
+
+process_aes() {
+    read -s -p "Enter password: " password
+    local option=${option_code:4:3}
+    if [[ "${option_code:0:1}" == "e" ]]; then
+        tar_untar "0"
+        openssl enc "${aes_types[$option]}" -pbkdf2 -iter 1000 -salt -in "$file" -out "$file.enc" -pass pass:"$password"
+        rm "$file"
+        change_color "green"
+        printf "[+] File encrypted"
+    else
+        openssl enc -d "${aes_types[$option]}" -pbkdf2 -iter 1000 -salt -in "$file" -out "decrypted.tar" -pass pass:"$password" 
+        tar_untar "1"
+        change_color "green"
+        printf "[+] File decrypted"
+    fi
+}
 
 # Main function
 main () {
     clear
     banner
     menu
+    process_aes
+    echo "\n\n"
 }
 
 main
+
