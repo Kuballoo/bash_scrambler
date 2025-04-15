@@ -21,7 +21,6 @@ declare -A aes_types=(
   [ofb]="-aes-256-ofb"
   [ctr]="-aes-256-ctr"
   [ecb]="-aes-256-ecb"
-  [gcm]="-aes-256-gcm" 
 )
 
 
@@ -36,7 +35,7 @@ change_color() {
 
 # Print banner on start
 banner() {
-    change_color "red"
+    change_color "blue"
     printf "
 ┌────────────────────────────────────────────────────────┐
 │                                                        │
@@ -52,25 +51,67 @@ banner() {
 menu() {
     change_color "magenta"
     local temp_option=""
-    read -p "Do you want to encrypt or decrypt data [e/d]:" temp_option
-    option_code+="$temp_option"
-    read -p "Select algorithm [aes/rsa]: " temp_option
-    option_code+="$temp_option"
+
+    # Ask if the user wants to encrypt or decrypt the data
+    while true; do
+        read -p "Do you want to encrypt or decrypt data [e/d]: " temp_option
+        if [[ "$temp_option" == "e" || "$temp_option" == "d" ]]; then
+            option_code+="$temp_option"
+            break
+        else
+            change_color "red"
+            printf "[!] Invalid option! Please enter 'e' for encrypt or 'd' for decrypt.\n"
+            change_color "magenta"
+        fi
+    done
+
+    # Ask the user to select an algorithm: aes or rsa
+    while true; do
+        read -p "Select algorithm [aes/rsa]: " temp_option
+        if [[ "$temp_option" == "aes" || "$temp_option" == "rsa" ]]; then
+            option_code+="$temp_option"
+            break
+        else
+            change_color "red"
+            printf "[!] Invalid algorithm! Please enter 'aes' or 'rsa'.\n"
+            change_color "magenta"
+        fi
+    done
+
+    # If AES is selected, ask for the AES mode type
     if [ "$temp_option" == "aes" ]; then
-        read -p "Select aes type [cbc/cfb/ofb/ctr/ecb/gcm]: " temp_option
-        option_code+="$temp_option"
+        while true; do
+            read -p "Select AES type [cbc/cfb/ofb/ctr/ecb]: " temp_option
+            case "$temp_option" in
+                cbc|cfb|ofb|ctr|ecb)
+                    option_code+="$temp_option"
+                    break
+                    ;;
+                *)
+                    change_color "red"
+                    printf "[!] Invalid AES type! Options: cbc, cfb, ofb, ctr, ecb.\n"
+                    change_color "magenta"
+                    ;;
+            esac
+        done
     else
+        # For RSA, add a placeholder for AES type options
         option_code+="---"
     fi
+
+    # Ask the user to enter a filename or file path until a valid one is provided
     while true; do
         read -p "Enter filename or file path: " file
         if [[ -f "$file" || -d "$file" ]]; then
             break
         else
-            printf "[!] File doesnt exist!\n"
+            change_color "red"
+            printf "[!] File doesn't exist!\n"
+            change_color "magenta"
         fi
     done
 }
+
 
 # Function checking whether the given data is a folder and packs it into an archive
 tar_untar() {
@@ -83,22 +124,60 @@ tar_untar() {
     fi
 }
 
+# Function processing aes encryption and decryption
 process_aes() {
     read -s -p "Enter password: " password
+    # Print a newline after reading the password so messages display correctly
+    echo
     local option=${option_code:4:3}
+
     if [[ "${option_code:0:1}" == "e" ]]; then
-        tar_untar "0"
-        openssl enc "${aes_types[$option]}" -pbkdf2 -iter 1000 -salt -in "$file" -out "$file.enc" -pass pass:"$password"
-        rm "$file"
+        # Prepare tar for encryption mode
+        tar_untar "0" || {
+            change_color "red"
+            printf "\n[!] Error during tar preparation."
+            return 1
+        }
+
+        # Perform encryption with OpenSSL
+        openssl enc "${aes_types[$option]}" -pbkdf2 -iter 1000 -salt \
+            -in "$file" -out "encrypted.enc" -pass pass:"$password" || {
+            change_color "red"
+            printf "\n[!] Error during encryption."
+            return 1
+        }
+
+        # Remove the original file; check if deletion succeeded
+        rm "$file" || {
+            change_color "red"
+            printf "\n[!] Error removing the original file."
+            return 1
+        }
+
         change_color "green"
-        printf "[+] File encrypted"
+        printf "\n[+] File encrypted"
+
     else
-        openssl enc -d "${aes_types[$option]}" -pbkdf2 -iter 1000 -salt -in "$file" -out "decrypted.tar" -pass pass:"$password" 
-        tar_untar "1"
+        # Perform decryption with OpenSSL
+        openssl enc -d "${aes_types[$option]}" -pbkdf2 -iter 1000 -salt \
+            -in "$file" -out "decrypted.tar" -pass pass:"$password" || {
+            change_color "red"
+            printf "\n[!] Error during decryption."
+            return 1
+        }
+
+        # Extract the decrypted tar archive
+        tar_untar "1" || {
+            change_color "red"
+            printf "\n[!] Error during tar extraction."
+            return 1
+        }
+
         change_color "green"
-        printf "[+] File decrypted"
+        printf "\n[+] File decrypted"
     fi
 }
+
 
 # Main function
 main () {
@@ -106,7 +185,7 @@ main () {
     banner
     menu
     process_aes
-    echo "\n\n"
+    printf "\n\n"
 }
 
 main
